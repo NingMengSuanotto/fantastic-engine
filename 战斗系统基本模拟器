@@ -1,0 +1,296 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import random
+
+class Character:
+    """角色类，包含基本属性和战斗能力"""
+    def __init__(self, name, atk, defense, crit_rate, crit_dmg, hp):
+        self.name = name
+        self.atk = atk
+        self.defense = defense
+        self.crit_rate = crit_rate
+        self.crit_dmg = crit_dmg
+        self.hp = hp
+        self.max_hp = hp
+    
+    def attack(self, target):
+        """攻击目标，返回造成的伤害和是否暴击"""
+        # 计算基础伤害
+        base_damage = max(1, self.atk - target.defense * 0.5)
+        
+        # 判断是否暴击
+        is_crit = random.random() < self.crit_rate
+        damage_multiplier = self.crit_dmg if is_crit else 1.0
+        
+        # 计算最终伤害
+        final_damage = base_damage * damage_multiplier
+        
+        # 应用伤害
+        target.hp -= final_damage
+        
+        return final_damage, is_crit
+    
+    def is_alive(self):
+        """检查角色是否存活"""
+        return self.hp > 0
+    
+    def reset(self):
+        """重置角色状态"""
+        self.hp = self.max_hp
+
+class CombatSimulator:
+    """战斗模拟器类"""
+    def __init__(self, num_simulations=1000):
+        self.num_simulations = num_simulations
+        self.results = []
+    
+    def simulate_battle(self, player, enemy):
+        """模拟一场战斗"""
+        player.reset()
+        enemy.reset()
+        
+        rounds = 0
+        player_damages = []
+        enemy_damages = []
+        player_crits = []
+        enemy_crits = []
+        
+        # 战斗循环
+        while player.is_alive() and enemy.is_alive() and rounds < 100:  # 防止无限循环
+            rounds += 1
+            
+            # 玩家攻击
+            damage, is_crit = player.attack(enemy)
+            player_damages.append(damage)
+            player_crits.append(1 if is_crit else 0)
+            
+            # 敌人攻击（如果还活着）
+            if enemy.is_alive():
+                damage, is_crit = enemy.attack(player)
+                enemy_damages.append(damage)
+                enemy_crits.append(1 if is_crit else 0)
+        
+        # 记录战斗结果
+        return {
+            "winner": "player" if enemy.hp <= 0 else "enemy",
+            "rounds": rounds,
+            "player_hp": max(0, player.hp),
+            "enemy_hp": max(0, enemy.hp),
+            "player_damages": player_damages,
+            "enemy_damages": enemy_damages,
+            "player_crits": player_crits,
+            "enemy_crits": enemy_crits
+        }
+    
+    def run_simulations(self, player, enemy):
+        """运行多次模拟"""
+        self.results = []
+        
+        for _ in range(self.num_simulations):
+            result = self.simulate_battle(player, enemy)
+            self.results.append(result)
+        
+        return self.analyze_results()
+    
+    def analyze_results(self):
+        """分析模拟结果"""
+        if not self.results:
+            return {}
+        
+        # 提取数据
+        winners = [r["winner"] for r in self.results]
+        rounds = [r["rounds"] for r in self.results]
+        
+        # 计算玩家伤害统计数据
+        all_player_damages = []
+        all_player_crits = []
+        for r in self.results:
+            all_player_damages.extend(r["player_damages"])
+            all_player_crits.extend(r["player_crits"])
+        
+        # 计算敌人伤害统计数据
+        all_enemy_damages = []
+        all_enemy_crits = []
+        for r in self.results:
+            all_enemy_damages.extend(r["enemy_damages"])
+            all_enemy_crits.extend(r["enemy_crits"])
+        
+        # 转换为numpy数组便于计算
+        player_damages = np.array(all_player_damages) if all_player_damages else np.array([0])
+        enemy_damages = np.array(all_enemy_damages) if all_enemy_damages else np.array([0])
+        player_crits = np.array(all_player_crits) if all_player_crits else np.array([0])
+        enemy_crits = np.array(all_enemy_crits) if all_enemy_crits else np.array([0])
+        
+        # 计算统计指标
+        player_win_rate = winners.count("player") / len(winners)
+        
+        analysis = {
+            "player_win_rate": player_win_rate,
+            "avg_rounds": np.mean(rounds),
+            "player": {
+                "mean_damage": np.mean(player_damages),
+                "std_damage": np.std(player_damages),
+                "min_damage": np.min(player_damages) if len(player_damages) > 0 else 0,
+                "max_damage": np.max(player_damages) if len(player_damages) > 0 else 0,
+                "crit_rate": np.mean(player_crits) if len(player_crits) > 0 else 0
+            },
+            "enemy": {
+                "mean_damage": np.mean(enemy_damages),
+                "std_damage": np.std(enemy_damages),
+                "min_damage": np.min(enemy_damages) if len(enemy_damages) > 0 else 0,
+                "max_damage": np.max(enemy_damages) if len(enemy_damages) > 0 else 0,
+                "crit_rate": np.mean(enemy_crits) if len(enemy_crits) > 0 else 0
+            }
+        }
+        
+        return analysis
+    
+    def plot_results(self, analysis):
+        """绘制结果图表"""
+        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+        fig.suptitle('战斗系统模拟结果', fontsize=16)
+        
+        # 提取回合数数据
+        rounds = [r["rounds"] for r in self.results]
+        
+        # 绘制回合数分布
+        axes[0, 0].hist(rounds, bins=20, alpha=0.7, color='skyblue')
+        axes[0, 0].axvline(np.mean(rounds), color='red', linestyle='dashed', linewidth=1)
+        axes[0, 0].set_title('战斗回合数分布')
+        axes[0, 0].set_xlabel('回合数')
+        axes[0, 0].set_ylabel('频率')
+        
+        # 绘制玩家伤害分布
+        all_player_damages = []
+        for r in self.results:
+            all_player_damages.extend(r["player_damages"])
+        
+        axes[0, 1].hist(all_player_damages, bins=30, alpha=0.7, color='lightgreen')
+        axes[0, 1].axvline(analysis["player"]["mean_damage"], color='red', linestyle='dashed', linewidth=1)
+        axes[0, 1].set_title('玩家伤害分布')
+        axes[0, 1].set_xlabel('伤害值')
+        axes[0, 1].set_ylabel('频率')
+        
+        # 绘制敌人伤害分布
+        all_enemy_damages = []
+        for r in self.results:
+            all_enemy_damages.extend(r["enemy_damages"])
+        
+        axes[1, 0].hist(all_enemy_damages, bins=30, alpha=0.7, color='salmon')
+        axes[1, 0].axvline(analysis["enemy"]["mean_damage"], color='red', linestyle='dashed', linewidth=1)
+        axes[1, 0].set_title('敌人伤害分布')
+        axes[1, 0].set_xlabel('伤害值')
+        axes[1, 0].set_ylabel('频率')
+        
+        # 绘制胜率饼图
+        labels = ['玩家胜利', '敌人胜利']
+        sizes = [analysis["player_win_rate"] * 100, (1 - analysis["player_win_rate"]) * 100]
+        colors = ['lightgreen', 'lightcoral']
+        axes[1, 1].pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%', startangle=90)
+        axes[1, 1].axis('equal')
+        axes[1, 1].set_title('胜负比例')
+        
+        plt.tight_layout()
+        plt.savefig('combat_simulation_results.png', dpi=150, bbox_inches='tight')
+        plt.show()
+
+def main():
+    """主函数"""
+    print("开始战斗系统模拟...")
+    
+    # 创建角色
+    player = Character(
+        name="玩家",
+        atk=100,
+        defense=40,
+        crit_rate=0.15,
+        crit_dmg=1.8,
+        hp=500
+    )
+    
+    enemy = Character(
+        name="敌人",
+        atk=30,
+        defense=15,
+        crit_rate=0.05,
+        crit_dmg=1.5,
+        hp=300
+    )
+    
+    # 创建模拟器并运行
+    simulator = CombatSimulator(num_simulations=1000)
+    analysis = simulator.run_simulations(player, enemy)
+    
+    # 打印结果
+    print("\n===== 模拟结果分析 =====")
+    print(f"玩家胜率: {analysis['player_win_rate'] * 100:.2f}%")
+    print(f"平均回合数: {analysis['avg_rounds']:.2f}")
+    
+    print("\n----- 玩家伤害统计 -----")
+    print(f"平均伤害: {analysis['player']['mean_damage']:.2f}")
+    print(f"伤害标准差: {analysis['player']['std_damage']:.2f}")
+    print(f"最小伤害: {analysis['player']['min_damage']:.2f}")
+    print(f"最大伤害: {analysis['player']['max_damage']:.2f}")
+    print(f"实际暴击率: {analysis['player']['crit_rate'] * 100:.2f}%")
+    
+    print("\n----- 敌人伤害统计 -----")
+    print(f"平均伤害: {analysis['enemy']['mean_damage']:.2f}")
+    print(f"伤害标准差: {analysis['enemy']['std_damage']:.2f}")
+    print(f"最小伤害: {analysis['enemy']['min_damage']:.2f}")
+    print(f"最大伤害: {analysis['enemy']['max_damage']:.2f}")
+    print(f"实际暴击率: {analysis['enemy']['crit_rate'] * 100:.2f}%")
+    
+    # 绘制图表
+    print("\n生成可视化图表...")
+    simulator.plot_results(analysis)
+    print("图表已保存为 combat_simulation_results.png")
+    
+    # 平衡性建议
+    print("\n===== 平衡性建议 =====")
+    if analysis['player_win_rate'] > 0.7:
+        print("玩家过于强大，建议:")
+        print("- 降低玩家攻击力或提高敌人防御力")
+        print("- 减少玩家生命值或提高敌人攻击力")
+    elif analysis['player_win_rate'] < 0.3:
+        print("敌人过于强大，建议:")
+        print("- 提高玩家攻击力或降低敌人防御力")
+        print("- 增加玩家生命值或降低敌人攻击力")
+    else:
+        print("战斗相对平衡，可以进一步优化:")
+        print("- 调整暴击率和暴击伤害来增加战斗变化")
+        print("- 优化伤害公式使战斗更加可预测")
+    
+    # 伤害公式说明
+    print("\n使用的伤害公式: 基础伤害 = max(1, 攻击力 - 防御力 * 0.5)")
+    print("最终伤害 = 基础伤害 × 暴击伤害 (如果暴击)")
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+
+# 修改玩家属性
+player = Character(
+    name="玩家",
+    atk=120,        # 提高攻击力
+    defense=30,     # 降低防御力
+    crit_rate=0.2,  # 提高暴击率
+    crit_dmg=2.0,   # 提高暴击伤害
+    hp=400          # 调整生命值
+)
+
+# 修改敌人属性
+enemy = Character(
+    name="敌人",
+    atk=40,         # 提高攻击力
+    defense=20,     # 提高防御力
+    crit_rate=0.1,  # 提高暴击率
+    crit_dmg=1.8,   # 提高暴击伤害
+    hp=350          # 调整生命值
+)
+
+# 修改模拟次数
+simulator = CombatSimulator(num_simulations=5000)  # 增加模拟次数以提高准确性
