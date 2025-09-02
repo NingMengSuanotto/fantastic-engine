@@ -1,0 +1,168 @@
+import random
+import json
+
+class GachaSimulator:
+    def __init__(self, config_file="gacha_config.json"):
+        # 初始化模拟器，加载配置文件
+        self.config = self.load_config(config_file)  # 加载抽卡配置
+        self.pity_count = 0  # 保底计数器
+        self.inventory = self.config['inventory']  # 奖品库存
+        self.rank_prob = self.config['rank_prob']  # 各等级奖品概率
+        self.guaranteed_ssr = self.config['guaranteed_ssr']  # 是否触发SSR保底
+        self.pity_threshold = self.config['pity_threshold']  # 保底触发阈值
+
+    def load_config(self, config_file):
+        # 加载配置文件，若不存在则使用默认配置
+        try:
+            with open(config_file, 'r') as f:
+                return json.load(f)  # 读取JSON格式配置文件
+        except FileNotFoundError:
+            # 默认配置
+            return {
+                'inventory': {},  # 空库存
+                'rank_prob': {'SSR': 0.06, 'SR': 0.51, 'R': 0.43},  # 默认概率
+                'guaranteed_ssr': False,  # 默认无保底
+                'pity_threshold': 90  # 默认90抽保底
+            }
+
+    def save_config(self, config_file="gacha_config.json"):
+        # 保存当前配置到文件
+        with open(config_file, 'w') as f:
+            json.dump(self.config, f, indent=4)  # 格式化写入JSON文件
+
+    def _get_available_items(self, rank):
+        # 获取指定等级可用的奖品列表
+        return [item for item, stock in self.inventory.items() 
+                if stock > 0 and item.split(':')[0] == rank]  # 筛选有库存且等级匹配的奖品
+
+    def _update_inventory(self, item):
+        # 更新奖品库存
+        if item in self.inventory and self.inventory[item] > 0:
+            self.inventory[item] -= 1  # 库存减1
+            return True
+        return False  # 库存不足返回False
+
+    def _draw_item(self):
+        # 核心抽卡逻辑
+        if self.pity_count >= self.pity_threshold - 1 or self.guaranteed_ssr:
+            # 触发保底：强制获得SSR
+            rank = 'SSR'
+            self.pity_count = 0  # 重置保底计数器
+            self.guaranteed_ssr = False  # 重置保底状态
+        else:
+            # 正常抽卡逻辑
+            rand_val = random.random()  # 生成随机数
+            cumulative = 0  # 累积概率
+            for r, prob in self.rank_prob.items():
+                cumulative += prob
+                if rand_val <= cumulative:
+                    rank = r  # 确定奖品等级
+                    break
+
+        available = self._get_available_items(rank)  # 获取可用奖品
+        if not available:
+            available = self._get_available_items('R')  # 若无可用则降级为R
+        if not available:
+            return None  # 完全无库存返回None
+
+        item = random.choice(available)  # 随机选择一件奖品
+        return item
+
+    def single_pull(self):
+        # 执行单次抽卡
+        item = self._draw_item()  # 抽卡
+        if not item or not self._update_inventory(item):
+            return "Draw failed: No inventory"  # 抽卡失败提示
+
+        self.pity_count += 1  # 保底计数+1
+        if self.pity_count >= self.pity_threshold:
+            self.guaranteed_ssr = True  # 触发保底
+
+        rank = item.split(':')[0]  # 解析奖品等级
+        if rank != 'SSR' and self.pity_count >= self.pity_threshold:
+            self.guaranteed_ssr = True  # 非SSR时设置保底标记
+
+        return item  # 返回抽中的奖品
+
+    def ten_pull(self):
+        # 执行十连抽
+        results = []
+        for _ in range(10):  # 循环10次单抽
+            result = self.single_pull()
+            if "failed" in result:
+                break  # 抽卡失败则终止
+            results.append(result)  # 记录结果
+        return results
+
+    def add_inventory(self, item_name, quantity):
+        # 添加奖品库存
+        if item_name in self.inventory:
+            self.inventory[item_name] += quantity  # 已有奖品增加数量
+        else:
+            self.inventory[item_name] = quantity  # 新奖品初始化库存
+
+    def set_probability(self, rank, probability):
+        # 设置指定等级的概率
+        if rank in self.rank_prob:
+            self.rank_prob[rank] = probability  # 更新概率值
+
+    def reset_pity(self):
+        # 重置保底状态
+        self.pity_count = 0  # 重置计数器
+        self.guaranteed_ssr = False  # 重置保底标记
+
+
+
+
+
+      import random
+
+class GachaSimulator:
+    def __init__(self, base_rate=0.006, hard_pity=90, soft_pity_start=75, soft_pity_increment=0.06):
+        # 初始化模拟器参数
+        self.base_rate = base_rate  # SSR基础概率(0.6%)
+        self.hard_pity = hard_pity  # 硬保底阈值(90抽)
+        self.soft_pity_start = soft_pity_start  # 软保底起始抽数(75抽)
+        self.soft_pity_increment = soft_pity_increment  # 软保底概率增幅(6%)
+        self.pity_counter = 0  # 当前保底计数
+        self.total_pulls = 0  # 总抽卡次数
+        self.ssr_count = 0  # SSR获得数量
+
+    def calculate_current_rate(self):
+        # 计算当前SSR概率
+        if self.pity_counter >= self.hard_pity:
+            return 1.0  # 达到硬保底，100%概率
+        if self.pity_counter >= self.soft_pity_start:
+            # 软保底概率计算
+            soft_pity_rate = self.base_rate + self.soft_pity_increment * (self.pity_counter - self.soft_pity_start + 1)
+            return min(soft_pity_rate, 1.0)  # 概率不超过100%
+        return self.base_rate  # 未触发保底，返回基础概率
+
+    def pull(self): 
+        # 执行单次抽卡
+        current_rate = self.calculate_current_rate()  # 获取当前概率
+
+        # 抽卡判定
+        if random.random() <= current_rate or self.pity_counter >= self.hard_pity:
+            result = "SSR"  # 抽中SSR
+            self.ssr_count += 1  # SSR计数+1
+            self.pity_counter = 0  # 重置保底计数
+        else:
+            result = "非SSR"  # 未抽中SSR
+            self.pity_counter += 1  # 保底计数+1
+
+        self.total_pulls += 1  # 总抽卡次数+1
+        return result, current_rate, self.pity_counter  # 返回结果和状态
+
+    def simulate(self, num_pulls):
+        # 模拟多次抽卡
+        history = []  # 抽卡历史记录
+        for pull_num in range(1, num_pulls + 1):
+            result, rate, pity = self.pull()  # 执行单抽
+            history.append({
+                "pull_num": pull_num,  # 抽卡序号
+                "result": result,  # 抽卡结果
+                "rate": rate,  # 当前概率
+                "pity_counter": pity  # 保底计数
+            })
+        return history  # 返回完整历史记录
